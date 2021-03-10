@@ -34,25 +34,25 @@
 #
 """
 DESCRIPTION
-This script is for situations where your CVP server doesn't have internet access but you 
-have a jump host which can access CVP and has internet connectivity. The script downloads 
-the specified EOS image locally and then uploads to the CVP server and creates an image 
-bundle with the image in. It needs as inputs a valid arista.com profile token, the IP 
-address of your CVP server and the root password along with the image version 
-(e.g. 4.22.3F) and the WebGUI username and password of the CVP server you'd like to upload 
-it with. These can be hardcoded into the script by editing the 'default' values in the 
+This script is for situations where your CVP server doesn't have internet access but you
+have a jump host which can access CVP and has internet connectivity. The script downloads
+the specified EOS image locally and then uploads to the CVP server and creates an image
+bundle with the image in. It needs as inputs a valid arista.com profile token, the IP
+address of your CVP server and the root password along with the image version
+(e.g. 4.22.3F) and the WebGUI username and password of the CVP server you'd like to upload
+it with. These can be hardcoded into the script by editing the 'default' values in the
 parser lines of code or passed as commmand line options.
 
-The script can also simply be used as a quick way to download images from arista.com 
-without having to login to the website with SSO, browse through to find the right image 
-and download through a browser. For this use case only the API token, image version and 
+The script can also simply be used as a quick way to download images from arista.com
+without having to login to the website with SSO, browse through to find the right image
+and download through a browser. For this use case only the API token, image version and
 optional type of image option (for International, 64-bit, vEOS etc. images). CVP releases
 can also be downloaded by specifying the version of CVP with the --ver argument in the form
-cvp-2020.1.1 for example and then with the --img argument, whether the ova, kvm, rpm or 
+cvp-2020.1.1 for example and then with the --img argument, whether the ova, kvm, rpm or
 upgrade variant is required.
 
 Finally this script can be installed on an Eve-NG server to download an image and then create
-the qcow2 image in a folder based on the image version for use in Eve topologies. Just add 
+the qcow2 image in a folder based on the image version for use in Eve topologies. Just add
 --eve to the command when run. Note vEOS-lab images are best to use for Eve-NG.
 
 If running the script on a non-shared environment, the user's API key could be hardcoded into
@@ -64,9 +64,9 @@ INSTALLATION
 1. python3 needs to be installed on the host
 2. pip3 install scp paramiko tqdm requests
 3. wget https://github.com/Sparky-python/Arista_scripts/blob/master/eos_download.py
-4. Run the script using the following: .\eos_download.py --api {API TOKEN} --ver 
-{EOS VERSION|TERMINATTR VERSION|CVP VERSION} [--ver {TERMINATTR VERSION}] [--img {INT|64|2GB|2GB-INT|vEOS|vEOS-lab|vEOS64-lab|cEOS|cEOS64|source|ova|kvm|rpm|upgrade} --cvp {CVP IP ADDRESS} --rootpw {ROOT PASSWORD} --cvp_user 
-{GUI CVP USERNAME} --cvp_passwd {GUI CVP PASSWORD} --eve] 
+4. Run the script using the following: .\eos_download.py --api {API TOKEN} --ver
+{EOS VERSION|TERMINATTR VERSION|CVP VERSION} [--ver {TERMINATTR VERSION}] [--img {INT|64|2GB|2GB-INT|vEOS|vEOS-lab|vEOS64-lab|cEOS|cEOS64|source|ova|kvm|rpm|upgrade} --cvp {CVP IP ADDRESS} --rootpw {ROOT PASSWORD} --cvp_user
+{GUI CVP USERNAME} --cvp_passwd {GUI CVP PASSWORD} --eve]
 
 
 """
@@ -117,7 +117,7 @@ def tqdmWrapViewBar(*args, **kwargs):
             last[0] = a  # update last known iteration
         return viewBar2, pbar  # return callback, tqdmInstance
 
-# function to download a file and display progress bar using tqdm        
+# function to download a file and display progress bar using tqdm
 def download_file(url, filename):
    """
    Helper method handling downloading large files from `url` to `filename`. Returns a pointer to `filename`.
@@ -126,7 +126,7 @@ def download_file(url, filename):
    r = requests.get(url, stream=True)
    with open(filename, 'wb') as f:
       pbar = tqdm( unit="B", total=int( r.headers['Content-Length'] ), unit_scale=True, unit_divisor=1024 )
-      for chunk in r.iter_content(chunk_size=chunkSize): 
+      for chunk in r.iter_content(chunk_size=chunkSize):
          if chunk: # filter out keep-alive new chunks
             pbar.update (len(chunk))
             f.write(chunk)
@@ -160,6 +160,8 @@ parser.add_argument('--cvp_passwd', required=False,
                     default='', help='CVP WebUI Password')
 parser.add_argument('--eve', required=False, action='store_true',
                     help="Use this option if you're running this on Eve-NG to create a qcow2 image")
+parser.add_argument('--disable_ztp', required=False, action='store_true',
+                    help='Disable ZTP mode for vEOS-lab images running in Eve-NG')
 
 args = parser.parse_args()
 
@@ -171,6 +173,7 @@ rootpw = args.rootpw
 cvp_user = args.cvp_user
 cvp_passwd = args.cvp_passwd
 eve = args.eve
+ztp = args.disable_ztp
 
 # the api key needs converting into base64 which outputs a byte value and then decoding to a string
 creds = (base64.b64encode(api.encode())).decode("utf-8")
@@ -280,7 +283,7 @@ for image in file_list:
       download_link_url = "https://www.arista.com/custom_data/api/cvp/getDownloadLink/"
       jsonpost = {'sessionCode': session_code, 'filePath': path}
       result = requests.post(download_link_url, data=json.dumps(jsonpost))
-      download_link = (result.json()["data"]["url"])         
+      download_link = (result.json()["data"]["url"])
 
 
       print(eos_filename + " is currently downloading....")
@@ -299,7 +302,7 @@ for image in file_list:
             download_file (sha512_download_link, eos_filename + '.sha512sum')
          for line in urllib.request.urlopen(sha512_download_link):
             sha512_file = line
-      
+
          if "TerminAttr" in image:
             download_file_chksum = md5(eos_filename)  # calculate the MD5 checksum of the downloaded file, note only MD5 checksum available for TerminAttr images
             if (download_file_chksum == (sha512_file.decode("utf-8").split(" ")[0])):
@@ -392,3 +395,15 @@ if eve:
    os.system("/opt/unetlab/wrappers/unl_wrapper -a fixpermissions")
    os.system("rm "+ eos_filename)
    print ("Image successfully created")
+   eve_path = "/opt/unetlab/addons/qemu/" + eos_folder_name.rstrip(".vmdk")
+   if ztp:
+      print("Mounting volume to disable ZTP")
+      os.system("rm -rf " + eve_path + "/raw")
+      os.system("mkdir -p " + eve_path + "/raw")
+      os.system("guestmount -a {}/hda.qcow2 -m /dev/sda2 {}/raw/".format(eve_path,eve_path))
+      with open(eve_path + '/raw/zerotouch-config', 'w') as zfile:
+            zfile.write('DISABLE=True')
+      print("Unmounting volume at: " + str(eve_path))
+      os.system("guestunmount " + eve_path + '/raw/')
+      os.system('rm -rf ' + eve_path + '/raw')
+      print("Volume has been successfully unmounted at: " + str(eve_path))
