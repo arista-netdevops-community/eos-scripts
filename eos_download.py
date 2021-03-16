@@ -55,8 +55,8 @@ arguments remedy, ipam or cloudbuilder respectively.
 Finally this script can be installed on an Eve-NG server to download an image and then create
 the qcow2 image in a folder based on the image version for use in Eve topologies. Just add 
 --eve to the command when run. If ZTP for the vEOS-lab image is not required, the --disable_ztp
-option will mount the image and set ZTP to disabled. Note vEOS-lab images are best to use for 
-Eve-NG.
+option will mount the image and set ZTP to disabled. Images names in Eve will have '-noztp' at 
+the end of the image name. Note vEOS-lab images are best to use for Eve-NG.
 
 If running the script on a non-shared environment, the user's API key could be hardcoded into
 the script to save having to use it on the command line. To do this, enter the API key as the
@@ -465,14 +465,17 @@ if eve:
       eos_folder_name+=str(y.lower())
       eos_folder_name+="-"
    eos_folder_name+=str(x[-1])
+   eos_folder_name = eos_folder_name.rstrip(".vmdk")
+   if ztp:
+      eos_folder_name+="-noztp"
 
-   os.system("mkdir -p /opt/unetlab/addons/qemu/" + eos_folder_name.rstrip(".vmdk"))
-   os.system("mv hda.qcow2 /opt/unetlab/addons/qemu/" + eos_folder_name.rstrip(".vmdk"))
+   os.system("mkdir -p /opt/unetlab/addons/qemu/" + eos_folder_name.rstrip)
+   os.system("mv hda.qcow2 /opt/unetlab/addons/qemu/" + eos_folder_name.rstrip)
    os.system("/opt/unetlab/wrappers/unl_wrapper -a fixpermissions")
    os.system("rm "+ eos_filename)
    print ("Image successfully created")
 
-   eve_path = "/opt/unetlab/addons/qemu/" + eos_folder_name.rstrip(".vmdk")
+   eve_path = "/opt/unetlab/addons/qemu/" + eos_folder_name
    if ztp:
       print("Mounting volume to disable ZTP")
       os.system("rm -rf " + eve_path + "/raw")
