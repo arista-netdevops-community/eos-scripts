@@ -92,6 +92,7 @@ import os.path
 import re
 import time
 import hashlib
+from random import randint
 
 # part of progress bar code
 def viewBar(a,b):
