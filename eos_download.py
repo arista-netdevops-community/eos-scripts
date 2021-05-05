@@ -213,7 +213,7 @@ result = jsonPost(url=folder_tree_url, token=creds)
 try:
    folder_tree = (result.json()["data"]["xml"])
 except:
-   sleep(randint(1,10))
+   time.sleep(randint(1,10))
    result = jsonPost(url=folder_tree_url, token=creds)
    folder_tree = (result.json()["data"]["xml"])
 
@@ -348,7 +348,7 @@ for image in file_list:
       try:
          download_link = (result.json()["data"]["url"])
       except:
-         sleep(randint(1,10))
+         time.sleep(randint(1,10))
          result = jsonPost(url=download_link_url, data=jsonpost, token=creds)
          download_link = (result.json()["data"]["url"])
 
@@ -362,7 +362,7 @@ for image in file_list:
          try:
             download_link = (result.json()["data"]["url"])
          except:
-            sleep(randint(1,10))
+            time.sleep(randint(1,10))
             result = jsonPost(url=download_link_url, data=jsonpost, token=creds)
             download_link = (result.json()["data"]["url"])
          print(ipam_filename + " is currently downloading....")  
@@ -373,7 +373,7 @@ for image in file_list:
          try:
             download_link = (result.json()["data"]["url"])
          except:
-            sleep(randint(1,10))
+            time.sleep(randint(1,10))
             result = jsonPost(url=download_link_url, data=jsonpost, token=creds)
             download_link = (result.json()["data"]["url"])
          print(cb_filename + " is currently downloading....")  
@@ -386,7 +386,7 @@ for image in file_list:
          try:
             sha512_download_link = (sha512_result.json()["data"]["url"])
          except:
-            sleep(randint(1,10))
+            time.sleep(randint(1,10))
             sha512_result = jsonPost(url=download_link_url, data=jsonpost, token=creds)
             sha512_download_link = (sha512_result.json()["data"]["url"])
          if "TerminAttr" in image:
@@ -404,7 +404,7 @@ for image in file_list:
             try:
                sha512_download_link = (sha512_result.json()["data"]["url"])
             except:
-               sleep(randint(1,10))
+               time.sleep(randint(1,10))
                sha512_result = jsonPost(url=download_link_url, data=jsonpost, token=creds)
                sha512_download_link = (sha512_result.json()["data"]["url"])
             download_file (sha512_download_link, ipam_filename + '.sha512sum')
@@ -417,7 +417,7 @@ for image in file_list:
             try:
                sha512_download_link = (sha512_result.json()["data"]["url"])
             except:
-               sleep(randint(1,10))
+               time.sleep(randint(1,10))
                sha512_result = jsonPost(url=download_link_url, data=jsonpost, token=creds)
                sha512_download_link = (sha512_result.json()["data"]["url"])
             download_file (sha512_download_link, cb_filename + '.sha512sum')
