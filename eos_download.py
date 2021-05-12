@@ -463,7 +463,7 @@ if cvp != '': # if the CVP IP address has been specified when running the script
          eos_filename = filename
          eos_bundle = image
       elif "TerminAttr" in image:
-         z = 3
+         z = 2
          filename = image + "-1.swix"
          terminattr_filename = filename
       else:
