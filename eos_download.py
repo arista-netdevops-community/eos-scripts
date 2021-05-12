@@ -232,7 +232,7 @@ for image in file_list:
          eos_filename = "EOS-2GB-" + image + "-INT.swi" # filename should be something like EOS-4.22.1F-INT.swi
          image = image.rstrip("-INT") # image should be 4.22.1F, need to remove the -INT
    elif "TerminAttr" in image: # if the user wants a TerminAttr image
-      z = 3 # corresponds to "CloudVision" top level folder
+      z = 2 # corresponds to "CloudVision" top level folder
       eos_filename = image + "-1.swix" # filename should be something like TerminAttr-1.7.4-1.swix
    elif "ipam" in img: # if the user wants a CVP IPAM image
       z = 2 # corresponds to "CloudVision" top level folder
