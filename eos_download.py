@@ -150,9 +150,9 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--api', required=True,
                     default='', help='arista.com user API key')
 parser.add_argument('--ver', required=True, action='append',
-                    default=[], help='EOS and swix iamges to download, repeat --ver option for each file. EOS images should be in the form 4.22.1F, cvp-2020.1.1 for CVP and TerminAttr-1.7.4 for TerminAttr files')
+                    default=[], help='EOS and swix iamges to download, repeat --ver option for each file. EOS images should be in the form 4.22.1F, cvp-2020.1.1 for CVP and TerminAttr-1.7.4 for TerminAttr files. For Alertbase-CVP.json specify cvp')
 parser.add_argument('--img', required=False,
-                    default='', help='Type of EOS image required, INT, 64 (64-bit), 2GB (for 2GB flash platforms), 2GB-INT, vEOS, vEOS-lab, vEOS64-lab, cEOS, cEOS64, RN (to download the Release Notes) or source (to download the source files). If none specified assumes normal EOS image for switches. For CVP, specify kvm, ova, rpm or upgrade for the img flag. For CVP Applications, specify remedy, ipam or cloudbuilder')
+                    default='', help='Type of EOS image required, INT, 64 (64-bit), 2GB (for 2GB flash platforms), 2GB-INT, vEOS, vEOS-lab, vEOS64-lab, cEOS, cEOS64, RN (to download the Release Notes) or source (to download the source files). If none specified assumes normal EOS image for switches. For CVP, specify kvm, ova, rpm or upgrade for the img flag. For CVP Applications, specify remedy, ipam or cloudbuilder. For AlertBase file specify alertbase')
 parser.add_argument('--cvp', required=False,
                     default='', help='IP address of CVP server')
 parser.add_argument('--rootpw', required=False,
@@ -239,6 +239,8 @@ for image in file_list:
          eos_filename = image[:4] + "rpm-installer-" + image[4:]
       elif img == 'upgrade':
          eos_filename = image[:4] + "upgrade-" + image[4:] + ".tgz"
+      elif img == 'alertbase':
+         eos_filename = "AlertBase-CVP.json" # hardcoding filename as AlertBase-CVP.json as on website.
    else: # otherwise it's a normal EOS image they're after
       z = 0 # corresponds to "EOS" top level folder
       if img == 'cEOS':
@@ -321,7 +323,12 @@ for image in file_list:
                   sha512_path = grandchild.attrib['path'] # corresponds to the download path of the SHA512 checksum
                elif grandchild.text == (cb_filename + '.sha512sum'):
                   sha512_path2 = grandchild.attrib['path'] # corresponds to the download path of the SHA512 checksum
-
+         elif child.attrib == {'label': "Bug-Alerts"}:
+            for grandchild in child.iter('file'):
+                if grandchild.text == (eos_filename):
+                    path = grandchild.attrib['path']
+                elif grandchild.text == ('latest.md5'):  # hardcoding latest.md5 as present on the website
+                    sha512_path = grandchild.attrib['path'] # corresponds to the download path of the MD5 checksum
 
       if path == "": # this means we haven't found the image so we exit the script at this point
          print("\nFile " + eos_filename +" does not exist.")
@@ -357,7 +364,10 @@ for image in file_list:
          if "TerminAttr" in image:
             download_file (sha512_download_link, eos_filename + '.md5sum')
          if "cvp" in image:
-            download_file (sha512_download_link, eos_filename + '.md5')
+            if img == "alertbase":
+                download_file (sha512_download_link, 'latest.md5') # hardcoding latest.md5 as present on the website
+            else:
+                download_file (sha512_download_link, eos_filename + '.md5')
          else:
             download_file (sha512_download_link, eos_filename + '.sha512sum')
          for line in urllib.request.urlopen(sha512_download_link):
@@ -387,12 +397,21 @@ for image in file_list:
                print ("\nMD5 checksum incorrect, downloaded file must be corrupt.")
                sys.exit()
          elif "cvp" in image:
-            download_file_chksum = md5(eos_filename)  # calculate the MD5 checksum of the downloaded file, note only MD5 checksum available for CVP images
-            if (download_file_chksum == sha512_file.decode("utf-8").rstrip('\n')):
-               print ("\nMD5 checksum correct")
+            # Adding section for checking latest.md5 file for AlertBase-CVP.json
+            if img == "alertbase":
+                download_file_chksum = md5(eos_filename)
+                if (download_file_chksum == (sha512_file.decode("utf-8").split(" ")[0])):
+                    print ("\nMD5 checksum correct")
+                else:
+                    print ("\nMD5 checksum incorrect, downloaded file must be corrupt.")
+                sys.exit()
             else:
-               print ("\nMD5 checksum incorrect, downloaded file must be corrupt.")
-               sys.exit()
+                download_file_chksum = md5(eos_filename)  # calculate the MD5 checksum of the downloaded file, note only MD5 checksum available for CVP images
+                if (download_file_chksum == sha512_file.decode("utf-8").rstrip('\n')):
+                    print ("\nMD5 checksum correct")
+                else:
+                    print ("\nMD5 checksum incorrect, downloaded file must be corrupt.")
+                sys.exit()
          else:
             download_file_chksum = os.popen("openssl sha512 " + eos_filename).read()  # calculate the SHA512 checksum of the downloaded file
             if (download_file_chksum.split(" ")[1].rstrip('\n')) == (sha512_file.decode("utf-8").split(" ")[0]):
