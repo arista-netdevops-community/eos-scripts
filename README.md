@@ -15,3 +15,13 @@ If running the script on a non-shared environment, the user's API key could be h
 Run the script using the following: .\eos_download.py --api {API TOKEN} --ver {EOS VERSION|TERMINATTR VERSION|CVP VERSION} [--ver {EOS VERSION|TERMINATTR VERSION|CVP VERSION}] [--img {INT|64|2GB|2GB-INT|vEOS|vEOS-lab|vEOS64-lab|cEOS|cEOS64|source|ova|kvm|rpm|upgrade|ipam|remedy|cloudbuilder} --cvp {CVP IP ADDRESS}--rootpw {ROOT PASSWORD} --cvp_user {GUI CVP USERNAME} --cvp_passwd {GUI CVP PASSWORD} --eve --overwrite --disable_ztp] 
 
 Requires tqdm, paramiko, requests and scp modules installing
+
+
+## mcast_traffic.py
+Script to generate multicast traffic from an EOS switch. Simply copy the script to flash:. The INTERFACE option needs to be in the linux form so Et1 for Ethernet1 for example.
+
+Run the script using the following: .\mcast_traffic.py --interface {INTERFACE} --mcast_group {MULTICAST IP} --number {NUMBER OF PACKETS PER SECOND} --size {PACKET SIZE} -ttl {TTL}
+
+The default values if the options are not specified are 100 packets per second, size 500 bytes and TTL 64.
+
+The script automatically works out the dest multicast MAC address based on the mcast_group IP address. Should you want to override this and test with an incorrect dest MAC address, use the --incorrect_mac option.
