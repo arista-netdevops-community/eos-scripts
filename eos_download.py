@@ -169,8 +169,6 @@ def get_file_list(image, img):
          filename.append(image[:4] + "rpm-installer-" + image[4:])
       elif img == 'upgrade':
          filename.append(image[:4] + "upgrade-" + image[4:] + ".tgz")
-      elif img == 'ports':
-         filename.append("CloudVision-" + image[4:] + "-Open-Ports-")
    else: # otherwise it's a normal EOS image they're after
       index = 'EOS' # corresponds to "EOS" top level folder
       if img == 'cEOS':
@@ -230,7 +228,7 @@ def check_arguments(api, file_list, img, cvp, rootpw, cvp_user, cvp_passwd, eve,
          else:
             return True
       # next check CVP images
-      if img == ('ova') or img == ('kvm') or img == ('upgrade') or img == ('rpm') or img == ('ports'):
+      if img == ('ova') or img == ('kvm') or img == ('upgrade') or img == ('rpm'):
          test = re.compile('^cvp-[0-9][0-9][0-9][0-9]\.[0-9]\.[0-9]$')
          cvp_valid = test.match(image)
          if not cvp_valid:
@@ -345,9 +343,6 @@ for image in file_list:
                   path = grandchild.attrib['path']
                elif grandchild.text == (filename_list[0] + '.md5'):
                   sha512_path = grandchild.attrib['path'] # corresponds to the download path of the MD5 checksum
-               elif ('Open-Ports' in grandchild.text) and (filename_list[0] in grandchild.text):
-                  filename_list[0] = grandchild.text
-                  path = grandchild.attrib['path'] # corresponds to the download path
          elif child.attrib == {'label': "CVP IPAM Application"} and img == "ipam":
             for grandchild in child.iter('file'):
                #print(grandchild.text)
@@ -408,7 +403,7 @@ for image in file_list:
          download_file(download_link, filename_list[1])
 
 
-      if (img != 'source') and (img != 'RN') and (img != 'ports'):
+      if (img != 'source') and (img != 'RN'):
          jsonpost = {'sessionCode': session_code, 'filePath': sha512_path}
          sha512_result = requests.post(download_link_url, data=json.dumps(jsonpost))
          sha512_download_link = (sha512_result.json()["data"]["url"])
