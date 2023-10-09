@@ -1,0 +1,509 @@
+#!/usr/bin/env python3
+#
+# Copyright (c) 2023, Arista Networks, Inc.
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are
+# met:
+#  - Redistributions of source code must retain the above copyright notice,
+# this list of conditions and the following disclaimer.
+#  - Redistributions in binary form must reproduce the above copyright
+# notice, this list of conditions and the following disclaimer in the
+# documentation and/or other materials provided with the distribution.
+#  - Neither the name of Arista Networks nor the names of its
+# contributors may be used to endorse or promote products derived from
+# this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+# A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL ARISTA NETWORKS
+# BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+# BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+# WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+# OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
+# IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+"""
+DESCRIPTION
+The script can simply be used as a quick way to download images from arista.com
+without having to login to the website, browse through to find the right image and download
+through a browser. For this use case only the API token, image version and optional type of
+image option (for International, 64-bit, vEOS etc. images). CVP releases can also be
+downloaded by specifying the version of CVP with the --ver argument in the form cvp-2020.1.1
+for example and then with the --img argument, whether the ova, kvm, rpm or upgrade variant is
+required. CVP applications like Remedy, IPAM and CloudBuilder can be downloaded with the --img
+arguments remedy, ipam or cloudbuilder respectively.
+
+If running the script on a non-shared environment, the user's API key could be hardcoded into
+the script to save having to use it on the command line. To do this, enter the API key as the
+default value in the argparse section and change the required value to False.
+
+
+INSTALLATION
+1. python3 needs to be installed on the host
+2. pip3 install scp paramiko tqdm requests
+3. wget https://github.com/Sparky-python/Arista_scripts/blob/master/eos_download.py
+4. Run the script using the following: .\eos_download.py --api {API TOKEN} --ver
+{EOS VERSION|TERMINATTR VERSION|CVP VERSION} [--ver {EOS VERSION|TERMINATTR VERSION|CVP VERSION}] [--img {INT|64|2GB|2GB-INT|vEOS|vEOS-lab|vEOS-lab-swi|vEOS64-lab|cEOS|cEOS64|source|ova|kvm|rpm|upgrade|ipam|remedy|cloudbuilder} --cvp {CVP IP ADDRESS} --rootpw {ROOT PASSWORD} --cvp_user
+{GUI CVP USERNAME} --cvp_passwd {GUI CVP PASSWORD} --eve --overwrite --disable_ztp]
+
+
+"""
+__author__ = "marayson"
+
+import base64
+import xml.etree.ElementTree as ET
+import sys
+import requests
+import argparse
+import json
+import warnings
+import urllib.request
+import os
+import os.path
+import re
+import time
+import hashlib
+
+
+# function to download a file and display progress bar using tqdm
+def download_file(url, filename):
+    """
+    Helper method handling downloading large files from `url` to `filename`. Returns a pointer to `filename`.
+    """
+    chunkSize = 1024
+    r = requests.get(url, stream=True)
+    with open(filename, "wb") as f:
+        for chunk in r.iter_content(chunk_size=chunkSize):
+            if chunk:  # filter out keep-alive new chunks
+                f.write(chunk)
+    return filename
+
+
+def md5(fname):
+    hash_md5 = hashlib.md5()
+    with open(fname, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hash_md5.update(chunk)
+    return hash_md5.hexdigest()
+
+
+def get_file_list(image, img):
+    """Get file list"""
+    filename = []
+    if "TerminAttr" in image:  # if the user wants a TerminAttr image
+        index = "CloudVision"  # corresponds to "CloudVision" top level folder
+        filename.append(
+            image + "-1.swix"
+        )  # filename should be something like TerminAttr-1.7.4-1.swix
+    elif "ipam" in img:  # if the user wants a CVP IPAM image
+        index = "CloudVision"  # corresponds to "CloudVision" top level folder
+        filename.append(
+            "cvp-ipam-backend-v" + image + "-1.x86_64.rpm"
+        )  # filename should be something like cvp-ipam-backend-v1.2.1-1.x86_64.rpm
+        filename.append(
+            "ipam-ui-v" + image + "-1.noarch.rpm"
+        )  # 2 files are needed for CVP IPAM
+    elif "remedy" in img:  # if the user wants a CVP Remedy image
+        index = "CloudVision"  # corresponds to "CloudVision" top level folder
+        filename.append(
+            "remedy_cvp-" + image + "-1.noarch.rpm"
+        )  # filename should be something like remedy_cvp-1.0.0-1.noarch.rpm
+    elif "cloudbuilder" in img:  # if the user wants a CVP CloudBuilder image
+        index = "CloudVision"  # corresponds to "CloudVision" top level folder
+        filename.append(
+            "cloud-builder-v" + image + "-1.x86_64.rpm"
+        )  # filename should be something like cloud-builder-v2.4.0-1.x86_64.rpm
+        filename.append(
+            "cloud-builder-frontend-v" + image + "-1.noarch.rpm"
+        )  # 2 files are needed for CVP CloudBuilder
+    elif "cvp" in image:  # if the user wants a CVP image
+        index = "CloudVision"  # corresponds to "CloudVision" top level folder
+        if img == "ova":
+            filename.append(image + ".ova")
+        elif img == "kvm":
+            filename.append(image + "-kvm.tgz")
+        elif img == "rpm":
+            filename.append(image[:4] + "rpm-installer-" + image[4:])
+        elif img == "upgrade":
+            filename.append(image[:4] + "upgrade-" + image[4:] + ".tgz")
+    else:  # otherwise it's a normal EOS image they're after
+        index = "EOS"  # corresponds to "EOS" top level folder
+        if img == "cEOS":
+            if "EFT" in image:
+                filename.append(
+                    "cEOS-lab-" + image[:-5] + "-32bit-" + image[-4:] + ".tar.xz"
+                )
+            else:
+                filename.append(eos_filename="cEOS-lab-" + image + ".tar.xz")
+        elif img == "cEOS64":
+            if "EFT" in image:
+                filename.append(
+                    eos_filename="cEOS-lab-"
+                    + image[:-5]
+                    + "-64bit-"
+                    + image[-4:]
+                    + ".tar.xz"
+                )
+            else:
+                filename.append(eos_filename="cEOS64-lab-" + image + ".tar.xz")
+        elif img == "cEOS64":
+            filename.append("cEOS64-lab-" + image + ".tar.xz")
+        elif img == "vEOS":
+            filename.append("vEOS-" + image + ".vmdk")
+        elif img == "vEOS-lab":
+            filename.append("vEOS-lab-" + image + ".vmdk")
+        elif img == "vEOS-lab-swi":
+            filename.append("vEOS-lab-" + image + ".swi")
+        elif img == "vEOS64-lab":
+            filename.append("vEOS64-lab-" + image + ".vmdk")
+        elif img == "2GB":
+            filename.append("EOS-2GB-" + image + ".swi")
+        elif img == "64":
+            filename.append("EOS64-" + image + ".swi")
+        elif img == "RN":
+            filename.append("RN-" + image + "-")
+        elif img == "source":
+            filename.append("EOS-" + image + "-source.tar")
+        elif image == "latest":
+            filename.append("latest")
+        else:
+            filename.append(
+                "EOS-" + image + ".swi"
+            )  # filename should be something like EOS-4.22.1F.swi
+    return filename, index
+
+
+def get_latest_version(root):
+    for child in root.iter("dir"):
+        if "EOS-" in child.attrib["label"]:
+            return child.attrib["label"][4:]
+
+
+# function to validate the user inputs
+def check_arguments(
+    api, file_list, img, cvp, rootpw, cvp_user, cvp_passwd, eve, overwrite, ztp
+):
+    # check versions are valid
+    for image in file_list:
+        # first check EOS images
+        if "EFT" in image:
+            return True
+        elif (
+            img == ("INT")
+            or img == ("64")
+            or img == ("2GB")
+            or img == ("2GB-INT")
+            or img == ("vEOS")
+            or img == ("vEOS-lab")
+            or img == ("vEOS-lab-swi")
+            or img == ("vEOS64-lab")
+            or img == ("cEOS")
+            or img == ("cEOS64")
+            or img == ("RN")
+            or img == ("source")
+            or img == ("")
+        ):
+            test = re.compile("^[0-9]\\.[0-9][0-9]\\.[0-9]\\.*[0-9]*[F|M]$")
+            eos_valid = test.match(image)
+            if image == "latest":
+                eos_valid = True
+            if not eos_valid:
+                print(
+                    "Image version is not valid, please re-enter using the following format for EOS images: 4.26.0F or 4.21.7.1M"
+                )
+                return False
+            else:
+                return True
+        # next check CVP images
+        if img == ("ova") or img == ("kvm") or img == ("upgrade") or img == ("rpm"):
+            test = re.compile("^cvp-[0-9][0-9][0-9][0-9]\.[0-9]\.[0-9]$")
+            cvp_valid = test.match(image)
+            if not cvp_valid:
+                print(
+                    "Image version is not valid, please re-enter using the following format for CVP images: cvp-2021.1.0"
+                )
+                return False
+            else:
+                return True
+
+
+# use argparse to take the user input, can fill in default values here if the user wishes
+# especially useful for the API key which won't change for a particular user
+warnings.filterwarnings("ignore")
+parser = argparse.ArgumentParser()
+parser.add_argument("--api", required=True, default="", help="arista.com user API key")
+parser.add_argument(
+    "--ver",
+    required=True,
+    action="append",
+    default=[],
+    help='EOS and swix images to download, repeat --ver option for each file. EOS images should be in the form 4.22.1F, cvp-2020.1.1 for CVP and TerminAttr-1.7.4 for TerminAttr files. Or use "latest" to download the latest version of EOS.',
+)
+parser.add_argument(
+    "--img",
+    required=False,
+    default="",
+    help="Type of EOS image required, INT, 64 (64-bit), 2GB (for 2GB flash platforms), 2GB-INT, vEOS, vEOS-lab, vEOS-lab-swi, vEOS64-lab, cEOS, cEOS64, RN (to download the Release Notes) or source (to download the source files). If none specified assumes normal EOS image for switches. For CVP, specify kvm, ova, rpm or upgrade for the img flag. For CVP Applications, specify remedy, ipam or cloudbuilder",
+)
+parser.add_argument(
+    "--cvp", required=False, default="", help="IP address of CVP server"
+)
+parser.add_argument(
+    "--rootpw", required=False, default="", help="Root password of CVP server"
+)
+parser.add_argument("--cvp_user", required=False, default="", help="CVP WebUI Username")
+parser.add_argument(
+    "--cvp_passwd", required=False, default="", help="CVP WebUI Password"
+)
+parser.add_argument(
+    "--eve",
+    required=False,
+    action="store_true",
+    help="Use this option if you're running this on Eve-NG to create a qcow2 image",
+)
+parser.add_argument(
+    "--overwrite",
+    required=False,
+    action="store_true",
+    help="Use this option if you would like to overwrite any previously downloaded files",
+)
+parser.add_argument(
+    "--disable_ztp",
+    required=False,
+    action="store_true",
+    help="Disable ZTP mode for vEOS-lab images running in Eve-NG",
+)
+
+args = parser.parse_args()
+
+api = args.api
+file_list = args.ver  # this will be a list of the files requested to be downloaded
+img = args.img
+cvp = args.cvp
+rootpw = args.rootpw
+cvp_user = args.cvp_user
+cvp_passwd = args.cvp_passwd
+eve = args.eve
+overwrite = args.overwrite
+ztp = args.disable_ztp
+
+if not check_arguments(
+    api, file_list, img, cvp, rootpw, cvp_user, cvp_passwd, eve, overwrite, ztp
+):
+    sys.exit()
+
+# the api key needs converting into base64 which outputs a byte value and then decoding to a string
+creds = (base64.b64encode(api.encode())).decode("utf-8")
+
+# there are 3 steps to downloading an image via the API, first is to get a session code
+session_code_url = "https://www.arista.com/custom_data/api/cvp/getSessionCode/"
+jsonpost = {"accessToken": creds}
+result = requests.post(session_code_url, data=json.dumps(jsonpost))
+if result.json()["status"]["message"] == "Access token expired":
+    print(
+        "The API token has expired. Please visit arista.com, click on your profile and select Regenerate Token then re-run the script with the new token."
+    )
+    sys.exit()
+elif result.json()["status"]["message"] == "Invalid access token":
+    print(
+        "The API token is incorrect. Please visit arista.com, click on your profile and check the Access Token. Then re-run the script with the correct token."
+    )
+    sys.exit()
+session_code = result.json()["data"]["session_code"]
+
+# then get the current folder tree, similar to what you see on the download page in XML format
+folder_tree_url = "https://www.arista.com/custom_data/api/cvp/getFolderTree/"
+jsonpost = {"sessionCode": session_code}
+result = requests.post(folder_tree_url, data=json.dumps(jsonpost))
+
+folder_tree = result.json()["data"]["xml"]
+root = ET.fromstring(folder_tree)
+
+path = ""
+if file_list[0] == "latest":
+    file_list[0] = get_latest_version(root)
+
+
+# for each image the user wishes to download
+for image in file_list:
+    image_type = get_file_list(image, img)[1]
+    filename_list = get_file_list(image, img)[0]
+
+    if (
+        os.path.isfile(filename_list[0]) and not overwrite
+    ):  # check if the image exists in the current directory, if so no need to download again
+        print("\nLocal copy of file already exists")
+    else:
+        for child in root.iter("dir"):
+            # print(child.attrib)
+            if child.attrib == {"label": "EOS-" + image}:
+                for grandchild in child.iter("file"):
+                    # print(grandchild.text)
+                    if grandchild.text == (filename_list[0]):
+                        path = grandchild.attrib[
+                            "path"
+                        ]  # corresponds to the download path
+                    elif grandchild.text == (filename_list[0] + ".sha512sum"):
+                        sha512_path = grandchild.attrib[
+                            "path"
+                        ]  # corresponds to the download path of the sha512 checksum
+                    elif ("RN" in grandchild.text) and (
+                        filename_list[0] in grandchild.text
+                    ):
+                        filename_list[0] = grandchild.text
+                        path = grandchild.attrib[
+                            "path"
+                        ]  # corresponds to the download path
+            elif child.attrib == {"label": image} or child.attrib == {
+                "label": image + "-1"
+            }:  # special case for TerminAttr as some releases have -1 in the folder name others don't but the filename always has the -1
+                # print (child.attrib)
+                for grandchild in child.iter("file"):
+                    if grandchild.text == (filename_list[0]):
+                        path = grandchild.attrib["path"]
+                    elif grandchild.text == (filename_list[0] + ".md5sum"):
+                        sha512_path = grandchild.attrib[
+                            "path"
+                        ]  # corresponds to the download path of the MD5 checksum
+            elif child.attrib == {
+                "label": image[4:]
+            }:  # special case for CVP as labels are in the format 2020.1.1 so we need to remove 'cvp-' to match
+                # print (child.attrib)
+                for grandchild in child.iter("file"):
+                    if grandchild.text == (filename_list[0]):
+                        path = grandchild.attrib["path"]
+                    elif grandchild.text == (filename_list[0] + ".md5"):
+                        sha512_path = grandchild.attrib[
+                            "path"
+                        ]  # corresponds to the download path of the MD5 checksum
+            elif child.attrib == {"label": "CVP IPAM Application"} and img == "ipam":
+                for grandchild in child.iter("file"):
+                    # print(grandchild.text)
+                    if grandchild.text == (filename_list[0]):
+                        path = grandchild.attrib["path"]
+                    elif grandchild.text == (filename_list[1]):
+                        path2 = grandchild.attrib["path"]
+                    elif grandchild.text == (filename_list[0] + ".sha512sum"):
+                        sha512_path = grandchild.attrib[
+                            "path"
+                        ]  # corresponds to the download path of the SHA512 checksum
+                    elif grandchild.text == (filename_list[1] + ".sha512sum"):
+                        sha512_path2 = grandchild.attrib[
+                            "path"
+                        ]  # corresponds to the download path of the SHA512 checksum
+            elif child.attrib == {"label": "Remedy-CVP"} and img == "remedy":
+                for grandchild in child.iter("file"):
+                    # print(grandchild.text)
+                    if grandchild.text == (filename_list[0]):
+                        path = grandchild.attrib["path"]
+                    elif grandchild.text == (filename_list[0] + ".sha512sum"):
+                        sha512_path = grandchild.attrib[
+                            "path"
+                        ]  # corresponds to the download path of the SHA512 checksum
+            elif child.attrib == {"label": "Cloud Builder"} and img == "cloudbuilder":
+                for grandchild in child.iter("file"):
+                    # print(grandchild.text)
+                    if grandchild.text == (filename_list[0]):
+                        path = grandchild.attrib["path"]
+                    elif grandchild.text == (filename_list[1]):
+                        path2 = grandchild.attrib["path"]
+                    elif grandchild.text == (filename_list[0] + ".sha512sum"):
+                        sha512_path = grandchild.attrib[
+                            "path"
+                        ]  # corresponds to the download path of the SHA512 checksum
+                    elif grandchild.text == (filename_list[1] + ".sha512sum"):
+                        sha512_path2 = grandchild.attrib[
+                            "path"
+                        ]  # corresponds to the download path of the SHA512 checksum
+
+        if (
+            path == ""
+        ):  # this means we haven't found the image so we exit the script at this point
+            print("\nFile " + eos_filename + " does not exist.")
+            sys.exit()
+        if (
+            os.path.isfile(filename_list[0]) and not overwrite
+        ):  # check if the image exists in the current directory, if so no need to download again
+            print("\nLocal copy of file already exists")
+
+        # the 3rd part of downloading a file is to use the path and session code to get the actual direct download link URL
+        download_link_url = (
+            "https://www.arista.com/custom_data/api/cvp/getDownloadLink/"
+        )
+        jsonpost = {"sessionCode": session_code, "filePath": path}
+        result = requests.post(download_link_url, data=json.dumps(jsonpost))
+        download_link = result.json()["data"]["url"]
+
+        print(filename_list[0] + " is currently downloading....")
+        # download the file to the current folder
+        download_file(download_link, filename_list[0])
+
+        if (img != "source") and (img != "RN"):
+            jsonpost = {"sessionCode": session_code, "filePath": sha512_path}
+            sha512_result = requests.post(download_link_url, data=json.dumps(jsonpost))
+            sha512_download_link = sha512_result.json()["data"]["url"]
+            if "TerminAttr" in image:
+                download_file(sha512_download_link, filename_list[0] + ".md5sum")
+            if "cvp" in image:
+                download_file(sha512_download_link, filename_list[0] + ".md5")
+            else:
+                download_file(sha512_download_link, filename_list[0] + ".sha512sum")
+            for line in urllib.request.urlopen(sha512_download_link):
+                sha512_file = line
+
+            if img == "ipam":
+                jsonpost = {"sessionCode": session_code, "filePath": sha512_path2}
+                sha512_result = requests.post(
+                    download_link_url, data=json.dumps(jsonpost)
+                )
+                sha512_download_link = sha512_result.json()["data"]["url"]
+                download_file(sha512_download_link, filename_list[1] + ".sha512sum")
+                for line in urllib.request.urlopen(sha512_download_link):
+                    sha512_file2 = line
+
+            if img == "cloudbuilder":
+                jsonpost = {"sessionCode": session_code, "filePath": sha512_path2}
+                sha512_result = requests.post(
+                    download_link_url, data=json.dumps(jsonpost)
+                )
+                sha512_download_link = sha512_result.json()["data"]["url"]
+                download_file(sha512_download_link, filename_list[1] + ".sha512sum")
+                for line in urllib.request.urlopen(sha512_download_link):
+                    sha512_file2 = line
+
+            if "TerminAttr" in image:
+                download_file_chksum = md5(
+                    filename_list[0]
+                )  # calculate the MD5 checksum of the downloaded file, note only MD5 checksum available for TerminAttr images
+                if download_file_chksum == (sha512_file.decode("utf-8").split(" ")[0]):
+                    print("\nMD5 checksum correct")
+                else:
+                    print("\nMD5 checksum incorrect, downloaded file must be corrupt.")
+                    sys.exit()
+            elif "cvp" in image:
+                download_file_chksum = md5(
+                    filename_list[0]
+                )  # calculate the MD5 checksum of the downloaded file, note only MD5 checksum available for CVP images
+                if download_file_chksum == sha512_file.decode("utf-8").rstrip("\n"):
+                    print("\nMD5 checksum correct")
+                else:
+                    print("\nMD5 checksum incorrect, downloaded file must be corrupt.")
+                    sys.exit()
+            else:
+                download_file_chksum = os.popen(
+                    "openssl sha512 " + filename_list[0]
+                ).read()  # calculate the SHA512 checksum of the downloaded file
+                if (download_file_chksum.split(" ")[1].rstrip("\n")) == (
+                    sha512_file.decode("utf-8").split(" ")[0]
+                ):
+                    print("\nSHA512 checksum correct")
+                else:
+                    print(
+                        "\nSHA512 checksum incorrect, downloaded file must be corrupt."
+                    )
+                    sys.exit()
