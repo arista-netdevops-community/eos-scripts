@@ -159,6 +159,9 @@ def get_file_list(image, img):
       index = 'CloudVision' # corresponds to "CloudVision" top level folder
       filename.append("cloud-builder-v" + image + "-1.x86_64.rpm") # filename should be something like cloud-builder-v2.4.0-1.x86_64.rpm
       filename.append("cloud-builder-frontend-v" + image + "-1.noarch.rpm") # 2 files are needed for CVP CloudBuilder
+   elif image == "alertbase": # if the user wants to download AlertBase-CVP.json
+      index = 'CloudVision' # corresponds to "CloudVision" top level folder
+      filename.append("AlertBase-CVP.json") # Filename as present on the website.
    elif "cvp" in image: # if the user wants a CVP image
       index = 'CloudVision' # corresponds to "CloudVision" top level folder
       if img == 'ova':
@@ -217,6 +220,8 @@ def check_arguments(api, file_list, img, cvp, rootpw, cvp_user, cvp_passwd, eve,
       # first check EOS images
       if "EFT" in image:
          return True
+      elif image == 'alertbase':
+         return True
       elif img == ('INT') or img == ('64') or img == ('2GB') or img == ('2GB-INT') or img == ('vEOS') or img == ('vEOS-lab') or img == ('vEOS-lab-swi') or img == ('vEOS64-lab') or img == ('cEOS') or img == ('cEOS64') or img == ('RN') or img == ('source') or img == (''):
          test = re.compile('^[0-9]\\.[0-9][0-9]\\.[0-9]\\.*[0-9]*[F|M]$')
          eos_valid = test.match(image)
@@ -247,7 +252,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--api', required=True,
                     default='', help='arista.com user API key')
 parser.add_argument('--ver', required=True, action='append',
-                    default=[], help='EOS and swix images to download, repeat --ver option for each file. EOS images should be in the form 4.22.1F, cvp-2020.1.1 for CVP and TerminAttr-1.7.4 for TerminAttr files. Or use "latest" to download the latest version of EOS.')
+                    default=[], help='EOS and swix images to download, repeat --ver option for each file. EOS images should be in the form 4.22.1F, cvp-2020.1.1 for CVP and TerminAttr-1.7.4 for TerminAttr files. Or use "latest" to download the latest version of EOS. Or use "alertbase" to download the latest Bug-Alerts AlertBase-CVP.json file.')
 parser.add_argument('--img', required=False,
                     default='', help='Type of EOS image required, INT, 64 (64-bit), 2GB (for 2GB flash platforms), 2GB-INT, vEOS, vEOS-lab, vEOS-lab-swi, vEOS64-lab, cEOS, cEOS64, RN (to download the Release Notes) or source (to download the source files). If none specified assumes normal EOS image for switches. For CVP, specify kvm, ova, rpm or upgrade for the img flag. For CVP Applications, specify remedy, ipam or cloudbuilder')
 parser.add_argument('--cvp', required=False,
@@ -372,6 +377,12 @@ for image in file_list:
                   sha512_path = grandchild.attrib['path'] # corresponds to the download path of the SHA512 checksum
                elif grandchild.text == (filename_list[1] + '.sha512sum'):
                   sha512_path2 = grandchild.attrib['path'] # corresponds to the download path of the SHA512 checksum
+         elif child.attrib == {'label': "Bug-Alerts"} and image == "alertbase":
+            for grandchild in child.iter('file'):
+               if grandchild.text == (filename_list[0]):
+                  path = grandchild.attrib['path']
+               elif grandchild.text == ('latest.md5'): # hardcoding latest.md5 as present on the website
+                  md5_path = grandchild.attrib['path'] # corresponds to the download path of the MD5 checksum
 
       if path == "": # this means we haven't found the image so we exit the script at this point
          print("\nFile " + eos_filename +" does not exist.")
@@ -401,9 +412,23 @@ for image in file_list:
          download_link = (result.json()["data"]["url"])
          print(filename_list[1] + " is currently downloading....")  
          download_file(download_link, filename_list[1])
+      elif image == "alertbase":
+         jsonpost = {'sessionCode': session_code, 'filePath': md5_path}
+         md5_result = requests.post(download_link_url, data=json.dumps(jsonpost))
+         md5_download_link = (md5_result.json()["data"]["url"])
+         print("Bug-Alerts latest.md5 is currently downloading....")  
+         download_file(md5_download_link, "latest.md5")
+         for line in urllib.request.urlopen(md5_download_link):
+            md5_file = line
+         download_file_chksum = md5(filename_list[0])
+         if (download_file_chksum == (md5_file.decode("utf-8").split(" ")[0])):
+            print ("\nMD5 checksum correct")
+         else:
+            print ("\nMD5 checksum incorrect, downloaded file must be corrupt.")
+            sys.exit()
 
 
-      if (img != 'source') and (img != 'RN'):
+      if (img != 'source') and (img != 'RN') and (image != 'alertbase'):
          jsonpost = {'sessionCode': session_code, 'filePath': sha512_path}
          sha512_result = requests.post(download_link_url, data=json.dumps(jsonpost))
          sha512_download_link = (sha512_result.json()["data"]["url"])
